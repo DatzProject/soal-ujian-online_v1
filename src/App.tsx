@@ -1,0 +1,682 @@
+import React, { useState, useEffect } from "react";
+import { BookOpen } from "lucide-react";
+
+// Replace with your deployed Google Apps Script Web App URL
+const scriptURL =
+  "https://script.google.com/macros/s/AKfycbxrnh4XMBcgRR2M4w43qRsle1ic2NzZ3N4pcA-YV0Z0jEPhsq9lwecPdZvZXwVEliKv4g/exec";
+
+interface QuizQuestion {
+  id: string;
+  soal: string;
+  gambar: string;
+  opsiA: string;
+  opsiB: string;
+  opsiC: string;
+  opsiD: string;
+  jawaban: string;
+}
+
+interface SubjectData {
+  mapel: string;
+  materi: string;
+  sheetName: string;
+  status: string;
+}
+
+interface StudentData {
+  nisn: string;
+  nama_siswa: string;
+}
+
+const OnlineExam: React.FC = () => {
+  const [nisn, setNisn] = useState<string>("");
+  const [namaSiswa, setNamaSiswa] = useState<string>("");
+  const [selectedMapel, setSelectedMapel] = useState<string>("");
+  const [selectedMateri, setSelectedMateri] = useState<string>("");
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [answers, setAnswers] = useState<{ [key: number]: string }>({});
+  const [answeredQuestions, setAnsweredQuestions] = useState<Set<number>>(
+    new Set()
+  );
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitStatus, setSubmitStatus] = useState<string>("");
+  const [score, setScore] = useState<number | null>(null);
+  const [examStarted, setExamStarted] = useState<boolean>(false);
+  const [subjectsData, setSubjectsData] = useState<SubjectData[]>([]);
+  const [isVerified, setIsVerified] = useState<boolean>(false);
+  const [studentsData, setStudentsData] = useState<StudentData[]>([]);
+  const [timeLeft, setTimeLeft] = useState<number>(1800); // 30 minutes in seconds
+  const [isCountingDown, setIsCountingDown] = useState<boolean>(false);
+  const [countdown, setCountdown] = useState<number>(5); // 5-second countdown
+  const [kkm, setKkm] = useState<number>(30); // Default KKM value
+  const examDuration = 1800; // Configurable exam duration in seconds
+
+  // Timer effect for exam
+  useEffect(() => {
+    if (examStarted && timeLeft > 0 && !isSubmitting && score === null) {
+      const timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            submitExam(true); // Auto-submit when time runs out
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [examStarted, timeLeft, isSubmitting, score]);
+
+  // Countdown effect after verification
+  useEffect(() => {
+    if (isCountingDown && countdown > 0) {
+      const countdownTimer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownTimer);
+            setIsCountingDown(false);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(countdownTimer);
+    }
+  }, [isCountingDown, countdown]);
+
+  // Fetch DataMapel, DataSiswa, and KKM
+  useEffect(() => {
+    // Fetch DataMapel
+    fetch(`${scriptURL}?action=getDataMapel`, {
+      method: "GET",
+      mode: "cors",
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.data)) {
+          const filteredData = data.data.filter(
+            (item: SubjectData) => item.status === "Izinkan"
+          );
+          setSubjectsData(filteredData);
+        } else {
+          setSubmitStatus(
+            `❌ Gagal mengambil data mapel: ${
+              data.message || "Kesalahan server."
+            }`
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Error fetching DataMapel:", error);
+        setSubmitStatus("❌ Gagal mengambil data mapel: Kesalahan jaringan.");
+      });
+
+    // Fetch DataSiswa
+    fetch(`${scriptURL}?action=getDataSiswa`, {
+      method: "GET",
+      mode: "cors",
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.data)) {
+          setStudentsData(data.data);
+        } else {
+          setSubmitStatus(
+            `❌ Gagal mengambil data siswa: ${
+              data.message || "Kesalahan server."
+            }`
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Error fetching DataSiswa:", error);
+        setSubmitStatus("❌ Gagal mengambil data siswa: Kesalahan jaringan.");
+      });
+
+    // Fetch KKM
+    fetch(`${scriptURL}?action=getKKM`, {
+      method: "GET",
+      mode: "cors",
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success && typeof data.kkm === "number") {
+          setKkm(data.kkm);
+        } else {
+          setSubmitStatus(
+            `❌ Gagal mengambil nilai KKM: ${
+              data.message || "Kesalahan server."
+            }`
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Error fetching KKM:", error);
+        setSubmitStatus("❌ Gagal mengambil nilai KKM: Kesalahan jaringan.");
+      });
+  }, []);
+
+  const verifyStudent = () => {
+    const trimmedNisn = nisn.trim();
+    const trimmedNamaSiswa = namaSiswa.trim();
+    if (
+      !selectedMapel ||
+      !selectedMateri ||
+      !trimmedNisn ||
+      !trimmedNamaSiswa
+    ) {
+      setSubmitStatus("⚠️ Semua field wajib diisi!");
+      return;
+    }
+
+    const selectedSubject = subjectsData.find(
+      (s) => s.mapel === selectedMapel && s.materi === selectedMateri
+    );
+    if (!selectedSubject || selectedSubject.status !== "Izinkan") {
+      setSubmitStatus("❌ Mapel dan materi tidak diizinkan untuk ujian.");
+      return;
+    }
+
+    fetch(
+      `${scriptURL}?action=verifyStudent&nisn=${encodeURIComponent(
+        trimmedNisn
+      )}&nama_siswa=${encodeURIComponent(trimmedNamaSiswa)}`,
+      {
+        method: "GET",
+        mode: "cors",
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success) {
+          setIsVerified(true);
+          setIsCountingDown(true); // Start countdown
+          setCountdown(5); // Reset countdown to 5 seconds
+          setSubmitStatus("");
+          setSelectedSheet(selectedSubject.sheetName);
+          fetch(
+            `${scriptURL}?action=getQuestions&sheet=${encodeURIComponent(
+              selectedSubject.sheetName
+            )}`,
+            {
+              method: "GET",
+              mode: "cors",
+            }
+          )
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.success && Array.isArray(data.data)) {
+                const formattedQuestions = data.data.map(
+                  (q: any, index: number) => ({
+                    id: index.toString(),
+                    soal: q.question || "",
+                    gambar: q.imageUrl || "",
+                    opsiA: q.optionA || "",
+                    opsiB: q.optionB || "",
+                    opsiC: q.optionC || "",
+                    opsiD: q.optionD || "",
+                    jawaban: q.answer || "A",
+                  })
+                );
+                setQuestions(formattedQuestions);
+                if (formattedQuestions.length === 0) {
+                  setSubmitStatus(
+                    `❌ Tidak ada soal valid di sheet ${selectedSubject.sheetName}.`
+                  );
+                  setIsCountingDown(false); // Stop countdown if no questions
+                }
+              } else {
+                setSubmitStatus(
+                  `❌ Gagal mengambil soal dari sheet ${
+                    selectedSubject.sheetName
+                  }: ${
+                    data.message || "Data soal tidak valid atau sheet kosong."
+                  }`
+                );
+                setIsCountingDown(false); // Stop countdown on error
+              }
+            })
+            .catch((error) => {
+              console.error("Error fetching questions:", error);
+              setSubmitStatus(
+                `❌ Gagal mengambil soal dari sheet ${selectedSubject.sheetName}: Kesalahan jaringan - ${error.message}`
+              );
+              setIsCountingDown(false); // Stop countdown on error
+            });
+        } else {
+          setSubmitStatus(
+            `❌ ${data.message || "NISN atau Nama Siswa tidak valid."}`
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Error verifying student:", error);
+        setSubmitStatus(
+          `❌ Gagal memverifikasi data siswa: Kesalahan jaringan - ${error.message}`
+        );
+      });
+  };
+
+  const startExam = () => {
+    if (isVerified && questions.length > 0) {
+      setExamStarted(true);
+      setTimeLeft(examDuration); // Reset timer to exam duration
+      setSubmitStatus("");
+    } else {
+      setSubmitStatus("⚠️ Verifikasi gagal atau tidak ada soal tersedia!");
+    }
+  };
+
+  const handleAnswerChange = (index: number, answer: string) => {
+    setAnswers((prev) => ({ ...prev, [index]: answer }));
+    setAnsweredQuestions((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(index);
+      return newSet;
+    });
+  };
+
+  const nextQuestion = () => {
+    if (currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+    }
+  };
+
+  const prevQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+    }
+  };
+
+  const jumpToQuestion = (index: number) => {
+    if (index >= 0 && index < questions.length) {
+      setCurrentQuestionIndex(index);
+    }
+  };
+
+  const submitExam = (isAutoSubmit: boolean = false) => {
+    if (!isAutoSubmit && Object.keys(answers).length < questions.length) {
+      setSubmitStatus("⚠️ Silakan jawab semua soal!");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitStatus(
+      isAutoSubmit
+        ? "⏰ Waktu habis! Mengirim jawaban..."
+        : "Mengirim jawaban..."
+    );
+
+    let correctAnswers = 0;
+    const answerArray = Array(20).fill(isAutoSubmit ? "Tidak dijawab" : "");
+    Object.keys(answers).forEach((index) => {
+      const idx = parseInt(index);
+      if (idx < 20) {
+        const selectedOption = answers[idx];
+        const question = questions[idx];
+        let answerText = "";
+        switch (selectedOption) {
+          case "A":
+            answerText = question.opsiA ? `A. ${question.opsiA}` : "";
+            break;
+          case "B":
+            answerText = question.opsiB ? `B. ${question.opsiB}` : "";
+            break;
+          case "C":
+            answerText = question.opsiC ? `C. ${question.opsiC}` : "";
+            break;
+          case "D":
+            answerText = question.opsiD ? `D. ${question.opsiD}` : "";
+            break;
+          default:
+            answerText = "";
+        }
+        answerArray[idx] = answerText;
+        if (selectedOption === question.jawaban) {
+          correctAnswers++;
+        }
+      }
+    });
+
+    const calculatedScore = Math.round(
+      (correctAnswers / questions.length) * 100
+    );
+
+    fetch(scriptURL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "submitExamResults",
+        nama: namaSiswa,
+        mata_pelajaran: selectedMapel,
+        bab_nama: selectedMateri,
+        nilai: correctAnswers,
+        persentase: calculatedScore,
+        jenis_ujian: "Ujian Harian",
+        answers: answerArray,
+      }),
+    })
+      .then(() => {
+        setScore(calculatedScore);
+        setSubmitStatus(
+          isAutoSubmit
+            ? `⏰ Waktu habis! Ujian selesai. Skor Anda: ${calculatedScore}/100`
+            : `✅ Ujian selesai! Skor Anda: ${calculatedScore}/100`
+        );
+        setIsSubmitting(false);
+      })
+      .catch(() => {
+        setSubmitStatus("❌ Gagal mengirim hasil ujian.");
+        setIsSubmitting(false);
+      });
+  };
+
+  // Format timeLeft as MM:SS
+  const formatTime = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    const pad = (num: number) => (num < 10 ? `0${num}` : `${num}`);
+    return `${pad(minutes)}:${pad(secs)}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="flex items-center gap-3 mb-6">
+            <BookOpen className="text-blue-600" size={32} />
+            <h1 className="text-3xl font-bold text-gray-800">Ujian Online</h1>
+          </div>
+
+          <p className="text-gray-600 mb-6">
+            Pilih mapel, materi, nama siswa, dan masukkan NISN untuk memulai
+            ujian.
+          </p>
+
+          {submitStatus && (
+            <div
+              className={`p-4 rounded-lg mb-6 ${
+                submitStatus.includes("berhasil") ||
+                submitStatus.includes("Ujian selesai")
+                  ? "bg-green-100 text-green-700 border border-green-200"
+                  : submitStatus.includes("Mengirim") ||
+                    submitStatus.includes("Waktu habis")
+                  ? "bg-blue-100 text-blue-700 border border-blue-200"
+                  : "bg-red-100 text-red-700 border border-red-200"
+              }`}
+            >
+              {submitStatus}
+            </div>
+          )}
+
+          {!examStarted && score === null ? (
+            <div className="grid gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mapel
+                </label>
+                <select
+                  value={selectedMapel}
+                  onChange={(e) => setSelectedMapel(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Pilih Mapel</option>
+                  {Array.from(new Set(subjectsData.map((s) => s.mapel))).map(
+                    (mapel) => (
+                      <option key={mapel} value={mapel}>
+                        {mapel}
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Materi
+                </label>
+                <select
+                  value={selectedMateri}
+                  onChange={(e) => setSelectedMateri(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={!selectedMapel}
+                >
+                  <option value="">Pilih Materi</option>
+                  {subjectsData
+                    .filter((s) => s.mapel === selectedMapel)
+                    .map((s) => (
+                      <option key={`${s.mapel}-${s.materi}`} value={s.materi}>
+                        {s.materi}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nama Siswa
+                </label>
+                <select
+                  value={namaSiswa}
+                  onChange={(e) => setNamaSiswa(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Pilih Nama Siswa</option>
+                  {studentsData.map((student) => (
+                    <option key={student.nisn} value={student.nama_siswa}>
+                      {student.nama_siswa}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  NISN
+                </label>
+                <input
+                  type="password"
+                  value={nisn}
+                  onChange={(e) => setNisn(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Masukkan NISN"
+                />
+              </div>
+              <button
+                onClick={verifyStudent}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={isCountingDown}
+              >
+                <BookOpen size={20} />
+                Verifikasi dan Muat Soal
+              </button>
+              {isCountingDown && (
+                <div className="text-center text-lg font-semibold text-blue-700 mt-4">
+                  Tunggu memuat soal dalam hitungan {countdown}
+                </div>
+              )}
+              {isVerified && !isCountingDown && (
+                <button
+                  onClick={startExam}
+                  className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <BookOpen size={20} />
+                  Mulai Ujian
+                </button>
+              )}
+            </div>
+          ) : score !== null ? (
+            <div className="text-center">
+              <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+                Hasil Ujian
+              </h2>
+              <p className="text-lg text-gray-600 mb-4">
+                NISN: {nisn}
+                <br />
+                Nama: {namaSiswa}
+                <br />
+                Mapel: {selectedMapel}
+                <br />
+                Materi: {selectedMateri}
+                <br />
+                Skor: {score}/100
+                <br />
+                Status: {score >= kkm ? "Lulus" : "Tidak Lulus"}
+              </p>
+              <button
+                onClick={() => {
+                  setExamStarted(false);
+                  setNisn("");
+                  setNamaSiswa("");
+                  setSelectedMapel("");
+                  setSelectedMateri("");
+                  setSelectedSheet("");
+                  setAnswers({});
+                  setCurrentQuestionIndex(0);
+                  setScore(null);
+                  setSubmitStatus("");
+                  setAnsweredQuestions(new Set());
+                  setIsVerified(false);
+                  setTimeLeft(examDuration);
+                  setIsCountingDown(false);
+                  setCountdown(5);
+                }}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <BookOpen size={20} />
+                Ulangi Ujian
+              </button>
+            </div>
+          ) : (
+            <div>
+              {questions.length > 0 ? (
+                <div className="space-y-6">
+                  <div className="bg-blue-100 text-blue-700 p-4 rounded-lg flex justify-between items-center">
+                    <span className="font-semibold">Waktu Tersisa:</span>
+                    <span className="text-lg font-mono">
+                      {formatTime(timeLeft)}
+                    </span>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-6 bg-gray-50">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                      Soal {currentQuestionIndex + 1} dari {questions.length}
+                    </h3>
+                    <div className="grid gap-4">
+                      <div>
+                        <p className="text-gray-700">
+                          {questions[currentQuestionIndex].soal}
+                        </p>
+                      </div>
+                      {questions[currentQuestionIndex].gambar && (
+                        <div>
+                          <img
+                            src={questions[currentQuestionIndex].gambar}
+                            alt="Soal Gambar"
+                            className="max-w-full h-auto mt-2 rounded-lg shadow-md"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src =
+                                "https://via.placeholder.com/300?text=Gambar+tidak+ditemukan";
+                            }}
+                            style={{ maxHeight: "200px" }}
+                          />
+                        </div>
+                      )}
+                      <div className="grid gap-2">
+                        {["opsiA", "opsiB", "opsiC", "opsiD"].map(
+                          (option, idx) => (
+                            <label
+                              key={idx}
+                              className="flex items-center gap-2"
+                            >
+                              <input
+                                type="radio"
+                                name={`question-${currentQuestionIndex}`}
+                                value={String.fromCharCode(65 + idx)}
+                                checked={
+                                  answers[currentQuestionIndex] ===
+                                  String.fromCharCode(65 + idx)
+                                }
+                                onChange={(e) =>
+                                  handleAnswerChange(
+                                    currentQuestionIndex,
+                                    e.target.value
+                                  )
+                                }
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                              />
+                              <span className="text-gray-700">
+                                {String.fromCharCode(65 + idx)}.{" "}
+                                {
+                                  questions[currentQuestionIndex][
+                                    option as keyof QuizQuestion
+                                  ]
+                                }
+                              </span>
+                            </label>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-4 justify-between">
+                    <button
+                      onClick={prevQuestion}
+                      disabled={currentQuestionIndex === 0}
+                      className="flex items-center gap-2 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                      Sebelumnya
+                    </button>
+                    {currentQuestionIndex < questions.length - 1 ? (
+                      <button
+                        onClick={nextQuestion}
+                        className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        Selanjutnya
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => submitExam(false)}
+                        disabled={isSubmitting}
+                        className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      >
+                        Selesai Ujian
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Pilih Soal:
+                    </label>
+                    <div className="grid grid-cols-5 gap-2">
+                      {questions.map((_, index) => (
+                        <button
+                          key={index}
+                          onClick={() => jumpToQuestion(index)}
+                          className={`px-4 py-2 rounded-md text-center ${
+                            currentQuestionIndex === index
+                              ? "bg-blue-600 text-white"
+                              : answeredQuestions.has(index)
+                              ? "bg-green-600 text-white hover:bg-green-700"
+                              : "bg-gray-200 hover:bg-gray-300"
+                          }`}
+                        >
+                          {index + 1}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-600">Tidak ada soal tersedia.</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default OnlineExam;
