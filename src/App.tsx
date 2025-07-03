@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Download } from "lucide-react";
+import { jsPDF } from "jspdf";
 
 // Replace with your deployed Google Apps Script Web App URL
 const scriptURL =
@@ -383,6 +384,146 @@ const OnlineExam: React.FC = () => {
     return `${pad(minutes)}:${pad(secs)}`;
   };
 
+  // Function to sanitize text
+  const sanitizeText = (text: string): string => {
+    return text
+      .replace(/\.pdf$/i, "") // Remove .pdf extension
+      .replace(/['"]/g, "") // Remove stray quotes
+      .replace(/\s+/g, " ") // Normalize spaces
+      .trim();
+  };
+
+  // Function to get formatted answer and correctness for review
+  const getFormattedAnswer = (
+    question: QuizQuestion,
+    index: number
+  ): { text: string; isCorrect: boolean } => {
+    const selectedOption = answers[index];
+    const isCorrect = !!selectedOption && selectedOption === question.jawaban;
+    if (!selectedOption) {
+      return { text: "Tidak dijawab", isCorrect: false };
+    }
+    switch (selectedOption) {
+      case "A":
+        return {
+          text: question.opsiA
+            ? `A. ${sanitizeText(question.opsiA)}`
+            : "Tidak dijawab",
+          isCorrect,
+        };
+      case "B":
+        return {
+          text: question.opsiB
+            ? `B. ${sanitizeText(question.opsiB)}`
+            : "Tidak dijawab",
+          isCorrect,
+        };
+      case "C":
+        return {
+          text: question.opsiC
+            ? `C. ${sanitizeText(question.opsiC)}`
+            : "Tidak dijawab",
+          isCorrect,
+        };
+      case "D":
+        return {
+          text: question.opsiD
+            ? `D. ${sanitizeText(question.opsiD)}`
+            : "Tidak dijawab",
+          isCorrect,
+        };
+      default:
+        return { text: "Tidak dijawab", isCorrect: false };
+    }
+  };
+
+  // Function to generate and download PDF using jsPDF
+  const generatePDF = () => {
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+
+    // Set font and size
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+
+    // Add Hasil Ujian section
+    doc.text("Hasil Ujian", 10, 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    doc.text(`NISN: ${sanitizeText(nisn)}`, 10, 20);
+    doc.text(`Nama: ${sanitizeText(namaSiswa)}`, 10, 30);
+    doc.text(`Mapel: ${sanitizeText(selectedMapel)}`, 10, 40);
+    doc.text(`Materi: ${sanitizeText(selectedMateri)}`, 10, 50);
+    doc.text(`Skor: ${score !== null ? score : 0}/100`, 10, 60);
+    doc.text(
+      `Status: ${score !== null && score >= kkm ? "Lulus" : "Tidak Lulus"}`,
+      10,
+      70
+    );
+
+    // Add Review Jawaban Anda section
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("Review Jawaban Anda", 10, 90);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+
+    let yPosition = 100;
+    const pageHeight = doc.internal.pageSize.height;
+    const marginBottom = 20;
+
+    questions.forEach((question, index) => {
+      const { text, isCorrect } = getFormattedAnswer(question, index);
+      const questionText = `Soal ${index + 1}: ${sanitizeText(question.soal)}`;
+      const answerText = `Jawaban Anda: ${text} [${
+        isCorrect ? "Benar" : "Salah"
+      }]`;
+      const imagePlaceholder = question.gambar
+        ? `[Gambar: ${sanitizeText(question.gambar)}]`
+        : "";
+
+      // Check if adding content will exceed page height
+      if (yPosition + 30 > pageHeight - marginBottom) {
+        doc.addPage();
+        yPosition = 10;
+      }
+
+      // Split long text to avoid overflow
+      const questionLines = doc.splitTextToSize(questionText, 180);
+      doc.setFont("helvetica", "bold");
+      doc.text(questionLines, 10, yPosition);
+      yPosition += questionLines.length * 6;
+
+      if (imagePlaceholder) {
+        if (yPosition + 10 > pageHeight - marginBottom) {
+          doc.addPage();
+          yPosition = 10;
+        }
+        doc.setFont("helvetica", "normal");
+        doc.text(imagePlaceholder, 10, yPosition);
+        yPosition += 6;
+      }
+
+      if (yPosition + 10 > pageHeight - marginBottom) {
+        doc.addPage();
+        yPosition = 10;
+      }
+      doc.setFont("helvetica", "normal");
+      doc.text(answerText, 10, yPosition);
+      yPosition += 10;
+    });
+
+    // Save the PDF
+    const filename = `Hasil_Ujian_${sanitizeText(namaSiswa).replace(
+      /\s+/g,
+      "_"
+    )}.pdf`;
+    doc.save(filename);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-4xl mx-auto">
@@ -524,29 +665,83 @@ const OnlineExam: React.FC = () => {
                 <br />
                 Status: {score >= kkm ? "Lulus" : "Tidak Lulus"}
               </p>
-              <button
-                onClick={() => {
-                  setExamStarted(false);
-                  setNisn("");
-                  setNamaSiswa("");
-                  setSelectedMapel("");
-                  setSelectedMateri("");
-                  setSelectedSheet("");
-                  setAnswers({});
-                  setCurrentQuestionIndex(0);
-                  setScore(null);
-                  setSubmitStatus("");
-                  setAnsweredQuestions(new Set());
-                  setIsVerified(false);
-                  setTimeLeft(examDuration);
-                  setIsCountingDown(false);
-                  setCountdown(5);
-                }}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <BookOpen size={20} />
-                Ulangi Ujian
-              </button>
+              <div className="mt-6">
+                <h3 className="text-xl font-semibold text-gray-800 mb-4">
+                  Review Jawaban Anda
+                </h3>
+                <div className="space-y-6">
+                  {questions.map((question, index) => {
+                    const { text, isCorrect } = getFormattedAnswer(
+                      question,
+                      index
+                    );
+                    return (
+                      <div
+                        key={index}
+                        className="border border-gray-200 rounded-lg p-4 bg-gray-50"
+                      >
+                        <h4 className="text-md font-semibold text-gray-800 mb-2">
+                          Soal {index + 1}
+                        </h4>
+                        <p className="text-gray-700 mb-2">{question.soal}</p>
+                        {question.gambar && (
+                          <img
+                            src={question.gambar}
+                            alt={`Gambar Soal ${index + 1}`}
+                            className="max-w-full h-auto mt-2 rounded-lg shadow-md"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src =
+                                "https://via.placeholder.com/300?text=Gambar+tidak+ditemukan";
+                            }}
+                            style={{ maxHeight: "200px" }}
+                          />
+                        )}
+                        <p className="text-gray-700 mt-2">
+                          <span className="font-medium">Jawaban Anda: </span>
+                          {text}{" "}
+                          <span className="inline-flex items-center ml-2">
+                            {isCorrect ? "✅" : "❌"}
+                          </span>
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex justify-center gap-4 mt-6">
+                <button
+                  onClick={() => {
+                    setExamStarted(false);
+                    setNisn("");
+                    setNamaSiswa("");
+                    setSelectedMapel("");
+                    setSelectedMateri("");
+                    setSelectedSheet("");
+                    setAnswers({});
+                    setCurrentQuestionIndex(0);
+                    setScore(null);
+                    setSubmitStatus("");
+                    setAnsweredQuestions(new Set());
+                    setIsVerified(false);
+                    setTimeLeft(examDuration);
+                    setIsCountingDown(false);
+                    setCountdown(5);
+                  }}
+                  className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <BookOpen size={20} />
+                  Ulangi Ujian
+                </button>
+                <button
+                  onClick={generatePDF}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  <Download size={20} />
+                  Download PDF
+                </button>
+              </div>
             </div>
           ) : (
             <div>
