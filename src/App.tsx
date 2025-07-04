@@ -34,6 +34,7 @@ const OnlineExam: React.FC = () => {
   const [namaSiswa, setNamaSiswa] = useState<string>("");
   const [selectedMapel, setSelectedMapel] = useState<string>("");
   const [selectedMateri, setSelectedMateri] = useState<string>("");
+  const [selectedJenisUjian, setSelectedJenisUjian] = useState<string>("");
   const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
@@ -166,6 +167,7 @@ const OnlineExam: React.FC = () => {
     if (
       !selectedMapel ||
       !selectedMateri ||
+      !selectedJenisUjian ||
       !trimmedNisn ||
       !trimmedNamaSiswa
     ) {
@@ -357,7 +359,7 @@ const OnlineExam: React.FC = () => {
         bab_nama: selectedMateri,
         nilai: correctAnswers,
         persentase: calculatedScore,
-        jenis_ujian: "Ujian Harian",
+        jenis_ujian: selectedJenisUjian,
         answers: answerArray,
       }),
     })
@@ -457,21 +459,22 @@ const OnlineExam: React.FC = () => {
     doc.text(`Nama: ${sanitizeText(namaSiswa)}`, 10, 30);
     doc.text(`Mapel: ${sanitizeText(selectedMapel)}`, 10, 40);
     doc.text(`Materi: ${sanitizeText(selectedMateri)}`, 10, 50);
-    doc.text(`Skor: ${score !== null ? score : 0}/100`, 10, 60);
+    doc.text(`Jenis Ujian: ${sanitizeText(selectedJenisUjian)}`, 10, 60);
+    doc.text(`Skor: ${score !== null ? score : 0}/100`, 10, 70);
     doc.text(
       `Status: ${score !== null && score >= kkm ? "Lulus" : "Tidak Lulus"}`,
       10,
-      70
+      80
     );
 
     // Add Review Jawaban Anda section
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text("Review Jawaban Anda", 10, 90);
+    doc.text("Review Jawaban Anda", 10, 100);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(12);
 
-    let yPosition = 100;
+    let yPosition = 110;
     const pageHeight = doc.internal.pageSize.height;
     const marginBottom = 20;
 
@@ -534,8 +537,8 @@ const OnlineExam: React.FC = () => {
           </div>
 
           <p className="text-gray-600 mb-6">
-            Pilih mapel, materi, nama siswa, dan masukkan NISN untuk memulai
-            ujian.
+            Pilih mapel, materi, jenis ujian, nama siswa, dan masukkan NISN
+            untuk memulai ujian.
           </p>
 
           {submitStatus && (
@@ -593,6 +596,20 @@ const OnlineExam: React.FC = () => {
                         {s.materi}
                       </option>
                     ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Jenis Ujian
+                </label>
+                <select
+                  value={selectedJenisUjian}
+                  onChange={(e) => setSelectedJenisUjian(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Pilih Jenis Ujian</option>
+                  <option value="UTAMA">UTAMA</option>
+                  <option value="REMEDIAL">REMEDIAL</option>
                 </select>
               </div>
               <div>
@@ -661,6 +678,8 @@ const OnlineExam: React.FC = () => {
                 <br />
                 Materi: {selectedMateri}
                 <br />
+                Jenis Ujian: {selectedJenisUjian}
+                <br />
                 Skor: {score}/100
                 <br />
                 Status: {score >= kkm ? "Lulus" : "Tidak Lulus"}
@@ -717,6 +736,7 @@ const OnlineExam: React.FC = () => {
                     setNamaSiswa("");
                     setSelectedMapel("");
                     setSelectedMateri("");
+                    setSelectedJenisUjian("");
                     setSelectedSheet("");
                     setAnswers({});
                     setCurrentQuestionIndex(0);
