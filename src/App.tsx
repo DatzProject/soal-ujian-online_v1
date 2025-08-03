@@ -4,7 +4,7 @@ import { jsPDF } from "jspdf";
 
 // Replace with your deployed Google Apps Script Web App URL
 const scriptURL =
-  "https://script.google.com/macros/s/AKfycbwj7d1rUabgyl6yEhc8ZI6O1e9qBAp4iKHhAH7Pc7btnUMa58bJmIL1wq3364XnQgDn1A/exec";
+  "https://script.google.com/macros/s/AKfycbzro8RIf_G13pKx_7A1l3jf6PrBT_miOOhujrYmHDSf9a8BtwatebXFZVFg4--JEbJ26Q/exec";
 
 interface QuizQuestion {
   id: string;
@@ -314,13 +314,15 @@ const OnlineExam: React.FC = () => {
     );
 
     let correctAnswers = 0;
-    const answerArray = Array(20).fill(isAutoSubmit ? "Tidak dijawab" : "");
-    Object.keys(answers).forEach((index) => {
-      const idx = parseInt(index);
-      if (idx < 20) {
-        const selectedOption = answers[idx];
-        const question = questions[idx];
-        let answerText = "";
+    const totalQuestions = questions.length;
+    const answerArray = Array(20).fill("");
+
+    // Process answers and calculate correct ones
+    questions.forEach((question, index) => {
+      const selectedOption = answers[index];
+      let answerText = "";
+
+      if (selectedOption) {
         switch (selectedOption) {
           case "A":
             answerText = question.opsiA ? `A. ${question.opsiA}` : "";
@@ -334,46 +336,67 @@ const OnlineExam: React.FC = () => {
           case "D":
             answerText = question.opsiD ? `D. ${question.opsiD}` : "";
             break;
-          default:
-            answerText = "";
         }
-        answerArray[idx] = answerText;
+
+        // Check if answer is correct
         if (selectedOption === question.jawaban) {
           correctAnswers++;
         }
+      } else {
+        answerText = isAutoSubmit ? "Tidak dijawab" : "";
+      }
+
+      // Store answer in array (max 20 positions)
+      if (index < 20) {
+        answerArray[index] = answerText;
       }
     });
 
-    const calculatedScore = Math.round(
-      (correctAnswers / questions.length) * 100
-    );
+    // Calculate final score as percentage
+    const calculatedScore = Math.round((correctAnswers / totalQuestions) * 100);
+
+    // Prepare data for submission
+    const submissionData = {
+      action: "submitExamResults",
+      nisn: nisn,
+      nama: namaSiswa,
+      mata_pelajaran: selectedMapel,
+      bab_nama: selectedMateri,
+      jumlah_benar: correctAnswers,
+      total_soal: totalQuestions,
+      nilai: calculatedScore,
+      persentase: calculatedScore,
+      jenis_ujian: selectedJenisUjian,
+      answers: answerArray,
+    };
+
+    console.log("Data yang dikirim:", submissionData);
+
+    // Create form data for better compatibility
+    const formData = new FormData();
+    formData.append("action", "submitExamResults");
+    formData.append("data", JSON.stringify(submissionData));
 
     fetch(scriptURL, {
       method: "POST",
       mode: "no-cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "submitExamResults",
-        nama: namaSiswa,
-        mata_pelajaran: selectedMapel,
-        bab_nama: selectedMateri,
-        nilai: correctAnswers,
-        persentase: calculatedScore,
-        jenis_ujian: selectedJenisUjian,
-        answers: answerArray,
-      }),
+      body: formData,
     })
-      .then(() => {
+      .then((response) => {
+        console.log("Response received (no-cors mode)");
+        // Dalam mode no-cors, kita tidak bisa membaca response
+        // Tapi jika tidak ada error, berarti request berhasil dikirim
         setScore(calculatedScore);
         setSubmitStatus(
           isAutoSubmit
-            ? `⏰ Waktu habis! Ujian selesai. Skor Anda: ${calculatedScore}/100`
-            : `✅ Ujian selesai! Skor Anda: ${calculatedScore}/100`
+            ? `⏰ Waktu habis! Ujian selesai. Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar)`
+            : `✅ Ujian selesai! Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar)`
         );
         setIsSubmitting(false);
       })
-      .catch(() => {
-        setSubmitStatus("❌ Gagal mengirim hasil ujian.");
+      .catch((error) => {
+        console.error("Error submitting exam:", error);
+        setSubmitStatus(`❌ Gagal mengirim hasil ujian: ${error.message}`);
         setIsSubmitting(false);
       });
   };
