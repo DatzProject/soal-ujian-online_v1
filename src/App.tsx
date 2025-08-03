@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { BookOpen, Download } from "lucide-react";
+import { BookOpen, Download, Loader2 } from "lucide-react";
 import { jsPDF } from "jspdf";
 
 // Replace with your deployed Google Apps Script Web App URL
@@ -43,6 +43,7 @@ const OnlineExam: React.FC = () => {
     new Set()
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false); // New state for verification loading
   const [submitStatus, setSubmitStatus] = useState<string>("");
   const [score, setScore] = useState<number | null>(null);
   const [examStarted, setExamStarted] = useState<boolean>(false);
@@ -183,6 +184,10 @@ const OnlineExam: React.FC = () => {
       return;
     }
 
+    // Set loading state
+    setIsVerifying(true);
+    setSubmitStatus("⏳ Memproses verifikasi...");
+
     fetch(
       `${scriptURL}?action=verifyStudent&nisn=${encodeURIComponent(
         trimmedNisn
@@ -198,7 +203,7 @@ const OnlineExam: React.FC = () => {
           setIsVerified(true);
           setIsCountingDown(true); // Start countdown
           setCountdown(5); // Reset countdown to 5 seconds
-          setSubmitStatus("");
+          setSubmitStatus("✅ Verifikasi berhasil! Memuat soal...");
           setSelectedSheet(selectedSubject.sheetName);
           fetch(
             `${scriptURL}?action=getQuestions&sheet=${encodeURIComponent(
@@ -230,6 +235,10 @@ const OnlineExam: React.FC = () => {
                     `❌ Tidak ada soal valid di sheet ${selectedSubject.sheetName}.`
                   );
                   setIsCountingDown(false); // Stop countdown if no questions
+                } else {
+                  setSubmitStatus(
+                    "✅ Soal berhasil dimuat! Siap memulai ujian."
+                  );
                 }
               } else {
                 setSubmitStatus(
@@ -241,6 +250,7 @@ const OnlineExam: React.FC = () => {
                 );
                 setIsCountingDown(false); // Stop countdown on error
               }
+              setIsVerifying(false); // Stop loading state
             })
             .catch((error) => {
               console.error("Error fetching questions:", error);
@@ -248,11 +258,13 @@ const OnlineExam: React.FC = () => {
                 `❌ Gagal mengambil soal dari sheet ${selectedSubject.sheetName}: Kesalahan jaringan - ${error.message}`
               );
               setIsCountingDown(false); // Stop countdown on error
+              setIsVerifying(false); // Stop loading state
             });
         } else {
           setSubmitStatus(
             `❌ ${data.message || "NISN atau Nama Siswa tidak valid."}`
           );
+          setIsVerifying(false); // Stop loading state
         }
       })
       .catch((error) => {
@@ -260,6 +272,7 @@ const OnlineExam: React.FC = () => {
         setSubmitStatus(
           `❌ Gagal memverifikasi data siswa: Kesalahan jaringan - ${error.message}`
         );
+        setIsVerifying(false); // Stop loading state
       });
   };
 
@@ -571,7 +584,9 @@ const OnlineExam: React.FC = () => {
                 submitStatus.includes("Ujian selesai")
                   ? "bg-green-100 text-green-700 border border-green-200"
                   : submitStatus.includes("Mengirim") ||
-                    submitStatus.includes("Waktu habis")
+                    submitStatus.includes("Waktu habis") ||
+                    submitStatus.includes("Memproses") ||
+                    submitStatus.includes("Memuat")
                   ? "bg-blue-100 text-blue-700 border border-blue-200"
                   : "bg-red-100 text-red-700 border border-red-200"
               }`}
@@ -590,6 +605,7 @@ const OnlineExam: React.FC = () => {
                   value={selectedMapel}
                   onChange={(e) => setSelectedMapel(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isVerifying}
                 >
                   <option value="">Pilih Mapel</option>
                   {Array.from(new Set(subjectsData.map((s) => s.mapel))).map(
@@ -609,7 +625,7 @@ const OnlineExam: React.FC = () => {
                   value={selectedMateri}
                   onChange={(e) => setSelectedMateri(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={!selectedMapel}
+                  disabled={!selectedMapel || isVerifying}
                 >
                   <option value="">Pilih Materi</option>
                   {subjectsData
@@ -629,6 +645,7 @@ const OnlineExam: React.FC = () => {
                   value={selectedJenisUjian}
                   onChange={(e) => setSelectedJenisUjian(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isVerifying}
                 >
                   <option value="">Pilih Jenis Ujian</option>
                   <option value="UTAMA">UTAMA</option>
@@ -643,6 +660,7 @@ const OnlineExam: React.FC = () => {
                   value={namaSiswa}
                   onChange={(e) => setNamaSiswa(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isVerifying}
                 >
                   <option value="">Pilih Nama Siswa</option>
                   {studentsData.map((student) => (
@@ -662,22 +680,33 @@ const OnlineExam: React.FC = () => {
                   onChange={(e) => setNisn(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Masukkan NISN"
+                  disabled={isVerifying}
                 />
               </div>
-              <button
-                onClick={verifyStudent}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                disabled={isCountingDown}
-              >
-                <BookOpen size={20} />
-                Verifikasi dan Muat Soal
-              </button>
+              {!isVerified && (
+                <button
+                  onClick={verifyStudent}
+                  className={`flex items-center justify-center gap-2 px-6 py-3 rounded-lg transition-colors ${
+                    isVerifying
+                      ? "bg-gray-400 text-gray-700 cursor-not-allowed"
+                      : "bg-blue-600 text-white hover:bg-blue-700"
+                  }`}
+                  disabled={isCountingDown || isVerifying}
+                >
+                  {isVerifying ? (
+                    <Loader2 size={20} className="animate-spin" />
+                  ) : (
+                    <BookOpen size={20} />
+                  )}
+                  {isVerifying ? "Memproses..." : "Verifikasi dan Muat Soal"}
+                </button>
+              )}
               {isCountingDown && (
                 <div className="text-center text-lg font-semibold text-blue-700 mt-4">
                   Tunggu memuat soal dalam hitungan {countdown}
                 </div>
               )}
-              {isVerified && !isCountingDown && (
+              {isVerified && !isCountingDown && !isVerifying && (
                 <button
                   onClick={startExam}
                   className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -770,6 +799,7 @@ const OnlineExam: React.FC = () => {
                     setTimeLeft(examDuration);
                     setIsCountingDown(false);
                     setCountdown(5);
+                    setIsVerifying(false);
                   }}
                   className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
@@ -879,6 +909,9 @@ const OnlineExam: React.FC = () => {
                         disabled={isSubmitting}
                         className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                       >
+                        {isSubmitting && (
+                          <Loader2 size={20} className="animate-spin" />
+                        )}
                         Selesai Ujian
                       </button>
                     )}
