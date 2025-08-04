@@ -4,7 +4,7 @@ import { jsPDF } from "jspdf";
 
 // Replace with your deployed Google Apps Script Web App URL
 const scriptURL =
-  "https://script.google.com/macros/s/AKfycbzro8RIf_G13pKx_7A1l3jf6PrBT_miOOhujrYmHDSf9a8BtwatebXFZVFg4--JEbJ26Q/exec";
+  "https://script.google.com/macros/s/AKfycbxHiqSqvl1a5_ihoaUvovfQ0vueSVXsV5HgD73eWkIaUzbeTU8HJMFMVE0naQF1mUY8YQ/exec";
 
 interface QuizQuestion {
   id: string;
@@ -54,6 +54,7 @@ const OnlineExam: React.FC = () => {
   const [isCountingDown, setIsCountingDown] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(5); // 5-second countdown
   const [kkm, setKkm] = useState<number>(30); // Default KKM value
+  const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false); // Confirmation dialog state
   const examDuration = 1800; // Configurable exam duration in seconds
 
   // Timer effect for exam
@@ -313,12 +314,24 @@ const OnlineExam: React.FC = () => {
     }
   };
 
-  const submitExam = (isAutoSubmit: boolean = false) => {
-    if (!isAutoSubmit && Object.keys(answers).length < questions.length) {
+  const handleFinishExam = () => {
+    if (Object.keys(answers).length < questions.length) {
       setSubmitStatus("⚠️ Silakan jawab semua soal!");
       return;
     }
+    setShowConfirmDialog(true);
+  };
 
+  const confirmSubmitExam = () => {
+    setShowConfirmDialog(false);
+    submitExam(false);
+  };
+
+  const cancelSubmitExam = () => {
+    setShowConfirmDialog(false);
+  };
+
+  const submitExam = (isAutoSubmit: boolean = false) => {
     setIsSubmitting(true);
     setSubmitStatus(
       isAutoSubmit
@@ -368,6 +381,9 @@ const OnlineExam: React.FC = () => {
     // Calculate final score as percentage
     const calculatedScore = Math.round((correctAnswers / totalQuestions) * 100);
 
+    // Determine status based on KKM
+    const status = calculatedScore >= kkm ? "Lulus" : "Tidak Lulus";
+
     // Prepare data for submission
     const submissionData = {
       action: "submitExamResults",
@@ -378,6 +394,7 @@ const OnlineExam: React.FC = () => {
       jumlah_benar: correctAnswers,
       total_soal: totalQuestions,
       nilai: calculatedScore,
+      status: status, // Add status here
       persentase: calculatedScore,
       jenis_ujian: selectedJenisUjian,
       answers: answerArray,
@@ -402,8 +419,8 @@ const OnlineExam: React.FC = () => {
         setScore(calculatedScore);
         setSubmitStatus(
           isAutoSubmit
-            ? `⏰ Waktu habis! Ujian selesai. Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar)`
-            : `✅ Ujian selesai! Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar)`
+            ? `⏰ Waktu habis! Ujian selesai. Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar) - Status: ${status}`
+            : `✅ Ujian selesai! Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar) - Status: ${status}`
         );
         setIsSubmitting(false);
       })
@@ -800,6 +817,7 @@ const OnlineExam: React.FC = () => {
                     setIsCountingDown(false);
                     setCountdown(5);
                     setIsVerifying(false);
+                    setShowConfirmDialog(false);
                   }}
                   className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
@@ -905,7 +923,7 @@ const OnlineExam: React.FC = () => {
                       </button>
                     ) : (
                       <button
-                        onClick={() => submitExam(false)}
+                        onClick={handleFinishExam}
                         disabled={isSubmitting}
                         className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                       >
@@ -945,6 +963,53 @@ const OnlineExam: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Confirmation Dialog */}
+        {showConfirmDialog && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
+                  <span className="text-yellow-600 text-2xl">⚠️</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    Konfirmasi Selesai Ujian
+                  </h3>
+                  <p className="text-gray-600 text-sm">
+                    Apakah Anda yakin ingin menyelesaikan ujian?
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-700">
+                  <span className="font-medium">Soal terjawab:</span>{" "}
+                  {Object.keys(answers).length} dari {questions.length}
+                </p>
+                <p className="text-sm text-gray-700 mt-1">
+                  <span className="font-medium">Waktu tersisa:</span>{" "}
+                  {formatTime(timeLeft)}
+                </p>
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={cancelSubmitExam}
+                  className="px-4 py-2 text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={confirmSubmitExam}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  Ya, Selesaikan Ujian
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
