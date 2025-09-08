@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { BookOpen, Download, Loader2 } from "lucide-react";
+import { BookOpen, Loader2 } from "lucide-react";
 import { jsPDF } from "jspdf";
 
 // Replace with your deployed Google Apps Script Web App URL
 const scriptURL =
-  "https://script.google.com/macros/s/AKfycbxHiqSqvl1a5_ihoaUvovfQ0vueSVXsV5HgD73eWkIaUzbeTU8HJMFMVE0naQF1mUY8YQ/exec";
+  "https://script.google.com/macros/s/AKfycbxLFIb5fzXhQjg9_HL5wvlSJUxSrdQH4SN8cMmhnjJA_y9Ud2RNI5VOpmOhtgnzIaeRmA/exec";
 
 interface QuizQuestion {
   id: string;
@@ -27,6 +27,16 @@ interface SubjectData {
 interface StudentData {
   nisn: string;
   nama_siswa: string;
+}
+
+interface QuestionData {
+  questionNumber: number;
+  questionText: string;
+  imageUrl: string;
+  selectedAnswerText: string;
+  isCorrect: boolean;
+  correctOption: string; // Tambah ini untuk opsi benar (misal "A")
+  correctText: string; // Tambah ini untuk teks opsi benar lengkap
 }
 
 const OnlineExam: React.FC = () => {
@@ -342,11 +352,12 @@ const OnlineExam: React.FC = () => {
     let correctAnswers = 0;
     const totalQuestions = questions.length;
     const answerArray = Array(20).fill("");
+    const questionsData: QuestionData[] = []; // Update ini: Gunakan tipe array dari interface
 
-    // Process answers and calculate correct ones
     questions.forEach((question, index) => {
       const selectedOption = answers[index];
       let answerText = "";
+      let isCorrect = false;
 
       if (selectedOption) {
         switch (selectedOption) {
@@ -364,18 +375,43 @@ const OnlineExam: React.FC = () => {
             break;
         }
 
-        // Check if answer is correct
         if (selectedOption === question.jawaban) {
           correctAnswers++;
+          isCorrect = true;
         }
       } else {
         answerText = isAutoSubmit ? "Tidak dijawab" : "";
       }
 
-      // Store answer in array (max 20 positions)
       if (index < 20) {
         answerArray[index] = answerText;
       }
+
+      let correctText = "";
+      switch (question.jawaban) {
+        case "A":
+          correctText = question.opsiA ? `A. ${question.opsiA}` : "";
+          break;
+        case "B":
+          correctText = question.opsiB ? `B. ${question.opsiB}` : "";
+          break;
+        case "C":
+          correctText = question.opsiC ? `C. ${question.opsiC}` : "";
+          break;
+        case "D":
+          correctText = question.opsiD ? `D. ${question.opsiD}` : "";
+          break;
+      }
+
+      questionsData.push({
+        questionNumber: index + 1,
+        questionText: question.soal,
+        imageUrl: question.gambar,
+        selectedAnswerText: answerText,
+        isCorrect: isCorrect,
+        correctOption: question.jawaban,
+        correctText: correctText,
+      });
     });
 
     // Calculate final score as percentage
@@ -384,7 +420,7 @@ const OnlineExam: React.FC = () => {
     // Determine status based on KKM
     const status = calculatedScore >= kkm ? "Lulus" : "Tidak Lulus";
 
-    // Prepare data for submission
+    // Prepare data for submission (TAMBAH questionsData di sini)
     const submissionData = {
       action: "submitExamResults",
       nisn: nisn,
@@ -394,35 +430,44 @@ const OnlineExam: React.FC = () => {
       jumlah_benar: correctAnswers,
       total_soal: totalQuestions,
       nilai: calculatedScore,
-      status: status, // Add status here
+      status: status,
       persentase: calculatedScore,
       jenis_ujian: selectedJenisUjian,
       answers: answerArray,
+      questionsData: questionsData, // Tambah ini: array detail soal + koreksi
+      folderId: "1ygdxdgZM7cWrdWgEJnq37T-aDFimnA6J", // ID folder Drive
     };
 
     console.log("Data yang dikirim:", submissionData);
 
-    // Create form data for better compatibility
+    // Create form data for better compatibility (HAPUS pdfFile karena backend buat sendiri)
     const formData = new FormData();
     formData.append("action", "submitExamResults");
-    formData.append("data", JSON.stringify(submissionData));
+    formData.append("data", JSON.stringify(submissionData)); // Kirim semua data sebagai JSON
 
     fetch(scriptURL, {
       method: "POST",
-      mode: "no-cors",
+      mode: "cors",
       body: formData,
     })
       .then((response) => {
-        console.log("Response received (no-cors mode)");
-        // Dalam mode no-cors, kita tidak bisa membaca response
-        // Tapi jika tidak ada error, berarti request berhasil dikirim
-        setScore(calculatedScore);
-        setSubmitStatus(
-          isAutoSubmit
-            ? `⏰ Waktu habis! Ujian selesai. Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar) - Status: ${status}`
-            : `✅ Ujian selesai! Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar) - Status: ${status}`
-        );
-        setIsSubmitting(false);
+        return response.json();
+      })
+      .then((data) => {
+        if (data.success) {
+          console.log("Upload dan pengiriman sukses:", data);
+          setScore(calculatedScore);
+          setSubmitStatus(
+            isAutoSubmit
+              ? `⏰ Waktu habis! Ujian selesai. Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar) - Status: ${status}`
+              : `✅ Ujian selesai! Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar) - Status: ${status}`
+          );
+          setIsSubmitting(false);
+        } else {
+          throw new Error(
+            data.message || "Gagal mengupload PDF atau menyimpan data."
+          );
+        }
       })
       .catch((error) => {
         console.error("Error submitting exam:", error);
@@ -493,7 +538,9 @@ const OnlineExam: React.FC = () => {
   };
 
   // Function to generate and download PDF using jsPDF
-  const generatePDF = () => {
+  const generatePDF = (
+    forDownload: boolean = false
+  ): { pdfBlob?: Blob; filename: string } => {
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
@@ -572,12 +619,18 @@ const OnlineExam: React.FC = () => {
       yPosition += 10;
     });
 
-    // Save the PDF
     const filename = `Hasil_Ujian_${sanitizeText(namaSiswa).replace(
       /\s+/g,
       "_"
-    )}.pdf`;
-    doc.save(filename);
+    )}_${Date.now()}.pdf`; // Tambah timestamp untuk nama file unik
+
+    if (forDownload) {
+      doc.save(filename); // Simpan PDF secara lokal hanya jika untuk download (tapi tombol download sudah dihilangkan)
+      return { filename };
+    } else {
+      const pdfBlob = doc.output("blob"); // Buat sebagai Blob untuk diupload
+      return { pdfBlob, filename };
+    }
   };
 
   return (
@@ -797,7 +850,7 @@ const OnlineExam: React.FC = () => {
                   })}
                 </div>
               </div>
-              <div className="flex justify-center gap-4 mt-6">
+              <div className="flex justify-center mt-6">
                 <button
                   onClick={() => {
                     setExamStarted(false);
@@ -823,14 +876,6 @@ const OnlineExam: React.FC = () => {
                 >
                   <BookOpen size={20} />
                   Ulangi Ujian
-                </button>
-                <button
-                  onClick={generatePDF}
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  <Download size={20} />
-                  Download PDF
                 </button>
               </div>
             </div>
