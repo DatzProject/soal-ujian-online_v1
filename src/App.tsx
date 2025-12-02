@@ -4,7 +4,7 @@ import { jsPDF } from "jspdf";
 
 // Replace with your deployed Google Apps Script Web App URL
 const scriptURL =
-  "https://script.google.com/macros/s/AKfycbxLFIb5fzXhQjg9_HL5wvlSJUxSrdQH4SN8cMmhnjJA_y9Ud2RNI5VOpmOhtgnzIaeRmA/exec";
+  "https://script.google.com/macros/s/AKfycby9mAD7563SoyieCfQ0GqJqQJnqJhjZyg55zDnpur5C9HjPcy1lvMUt6zRu9Squ9IMyUA/exec";
 
 interface QuizQuestion {
   id: string;
@@ -379,8 +379,13 @@ const OnlineExam: React.FC = () => {
           correctAnswers++;
           isCorrect = true;
         }
+
+        // TAMBAHKAN KETERANGAN (Benar) atau (Salah)
+        answerText += isCorrect ? " (Benar)" : " (Salah)";
       } else {
-        answerText = isAutoSubmit ? "Tidak dijawab" : "";
+        answerText = isAutoSubmit
+          ? "Tidak dijawab (Salah)"
+          : "Tidak dijawab (Salah)";
       }
 
       if (index < 20) {
