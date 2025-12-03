@@ -4,7 +4,7 @@ import { jsPDF } from "jspdf";
 
 // Replace with your deployed Google Apps Script Web App URL
 const scriptURL =
-  "https://script.google.com/macros/s/AKfycby9mAD7563SoyieCfQ0GqJqQJnqJhjZyg55zDnpur5C9HjPcy1lvMUt6zRu9Squ9IMyUA/exec";
+  "https://script.google.com/macros/s/AKfycbxPn0iYapc46OgI1EM_ivxgG5xp15y47qL_gSF1yPXnSVTVFwil7ehrZqHLIVPLquS5Sw/exec";
 
 interface QuizQuestion {
   id: string;
@@ -39,6 +39,14 @@ interface QuestionData {
   correctText: string; // Tambah ini untuk teks opsi benar lengkap
 }
 
+const STORAGE_KEYS = {
+  EXAM_STATE: "exam_state",
+  ANSWERS: "exam_answers",
+  TIME_LEFT: "exam_time_left",
+  CURRENT_QUESTION: "exam_current_question",
+  FORM_DATA: "exam_form_data",
+};
+
 const OnlineExam: React.FC = () => {
   const [nisn, setNisn] = useState<string>("");
   const [namaSiswa, setNamaSiswa] = useState<string>("");
@@ -66,6 +74,28 @@ const OnlineExam: React.FC = () => {
   const [kkm, setKkm] = useState<number>(30); // Default KKM value
   const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false); // Confirmation dialog state
   const examDuration = 3600; // Configurable exam duration in seconds
+  const [examDate, setExamDate] = useState<string>("");
+
+  // Fungsi helper untuk clear localStorage
+  const clearExamLocalStorage = () => {
+    localStorage.removeItem(STORAGE_KEYS.EXAM_STATE);
+    localStorage.removeItem(STORAGE_KEYS.ANSWERS);
+    localStorage.removeItem(STORAGE_KEYS.TIME_LEFT);
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_QUESTION);
+    localStorage.removeItem(STORAGE_KEYS.FORM_DATA);
+  };
+
+  // Fungsi untuk save form data
+  const saveFormData = () => {
+    const formData = {
+      nisn,
+      namaSiswa,
+      selectedMapel,
+      selectedMateri,
+      selectedJenisUjian,
+    };
+    localStorage.setItem(STORAGE_KEYS.FORM_DATA, JSON.stringify(formData));
+  };
 
   // Timer effect for exam
   useEffect(() => {
@@ -74,10 +104,13 @@ const OnlineExam: React.FC = () => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            submitExam(true); // Auto-submit when time runs out
+            submitExam(true);
             return 0;
           }
-          return prev - 1;
+          // >>> TAMBAH BARIS INI <
+          const newTimeLeft = prev - 1;
+          localStorage.setItem(STORAGE_KEYS.TIME_LEFT, String(newTimeLeft));
+          return newTimeLeft;
         });
       }, 1000);
       return () => clearInterval(timer);
@@ -100,6 +133,72 @@ const OnlineExam: React.FC = () => {
       return () => clearInterval(countdownTimer);
     }
   }, [isCountingDown, countdown]);
+
+  // Load saved data from localStorage
+  useEffect(() => {
+    // Load saved form data
+    const savedFormData = localStorage.getItem(STORAGE_KEYS.FORM_DATA);
+    if (savedFormData) {
+      try {
+        const formData = JSON.parse(savedFormData);
+        setNisn(formData.nisn || "");
+        setNamaSiswa(formData.namaSiswa || "");
+        setSelectedMapel(formData.selectedMapel || "");
+        setSelectedMateri(formData.selectedMateri || "");
+        setSelectedJenisUjian(formData.selectedJenisUjian || "");
+      } catch (e) {
+        console.error("Error loading form data:", e);
+      }
+    }
+
+    // Load saved exam state
+    const savedExamState = localStorage.getItem(STORAGE_KEYS.EXAM_STATE);
+    if (savedExamState) {
+      try {
+        const examState = JSON.parse(savedExamState);
+
+        // Cek apakah ujian masih dalam progress
+        if (examState.examStarted && !examState.score) {
+          setExamStarted(examState.examStarted);
+          setIsVerified(examState.isVerified);
+          setSelectedSheet(examState.selectedSheet);
+          setQuestions(examState.questions);
+
+          if (examState.examDate) {
+            setExamDate(examState.examDate);
+          }
+
+          // Load answers
+          const savedAnswers = localStorage.getItem(STORAGE_KEYS.ANSWERS);
+          if (savedAnswers) {
+            const parsedAnswers = JSON.parse(savedAnswers);
+            setAnswers(parsedAnswers);
+            setAnsweredQuestions(
+              new Set(Object.keys(parsedAnswers).map(Number))
+            );
+          }
+
+          // Load current question
+          const savedCurrentQuestion = localStorage.getItem(
+            STORAGE_KEYS.CURRENT_QUESTION
+          );
+          if (savedCurrentQuestion) {
+            setCurrentQuestionIndex(Number(savedCurrentQuestion));
+          }
+
+          // Load time left
+          const savedTimeLeft = localStorage.getItem(STORAGE_KEYS.TIME_LEFT);
+          if (savedTimeLeft) {
+            setTimeLeft(Number(savedTimeLeft));
+          }
+
+          setSubmitStatus("✅ Ujian dilanjutkan dari sesi sebelumnya");
+        }
+      } catch (e) {
+        console.error("Error loading exam state:", e);
+      }
+    }
+  }, []);
 
   // Fetch DataMapel, DataSiswa, and KKM
   useEffect(() => {
@@ -290,37 +389,70 @@ const OnlineExam: React.FC = () => {
   const startExam = () => {
     if (isVerified && questions.length > 0) {
       setExamStarted(true);
-      setTimeLeft(examDuration); // Reset timer to exam duration
+      setTimeLeft(examDuration);
       setSubmitStatus("");
+
+      // TAMBAH BARIS INI - Simpan tanggal saat ujian dimulai
+      const currentDate = new Date().toLocaleString("id-ID", {
+        dateStyle: "full",
+        timeStyle: "short",
+      });
+      setExamDate(currentDate);
+
+      const examState = {
+        examStarted: true,
+        isVerified: true,
+        selectedSheet,
+        questions,
+        score: null,
+        examDate: currentDate, // Tambah ini
+      };
+      localStorage.setItem(STORAGE_KEYS.EXAM_STATE, JSON.stringify(examState));
+      localStorage.setItem(STORAGE_KEYS.TIME_LEFT, String(examDuration));
+      localStorage.setItem(STORAGE_KEYS.CURRENT_QUESTION, "0");
     } else {
       setSubmitStatus("⚠️ Verifikasi gagal atau tidak ada soal tersedia!");
     }
   };
 
   const handleAnswerChange = (index: number, answer: string) => {
-    setAnswers((prev) => ({ ...prev, [index]: answer }));
+    const newAnswers = { ...answers, [index]: answer };
+    setAnswers(newAnswers);
+
     setAnsweredQuestions((prev) => {
       const newSet = new Set(prev);
       newSet.add(index);
       return newSet;
     });
+
+    // >>> TAMBAH KODE INI <
+    // Simpan answers ke localStorage
+    localStorage.setItem(STORAGE_KEYS.ANSWERS, JSON.stringify(newAnswers));
   };
 
   const nextQuestion = () => {
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      const newIndex = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(newIndex);
+      // >>> TAMBAH BARIS INI <
+      localStorage.setItem(STORAGE_KEYS.CURRENT_QUESTION, String(newIndex));
     }
   };
 
   const prevQuestion = () => {
     if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1);
+      const newIndex = currentQuestionIndex - 1;
+      setCurrentQuestionIndex(newIndex);
+      // >>> TAMBAH BARIS INI <
+      localStorage.setItem(STORAGE_KEYS.CURRENT_QUESTION, String(newIndex));
     }
   };
 
   const jumpToQuestion = (index: number) => {
     if (index >= 0 && index < questions.length) {
       setCurrentQuestionIndex(index);
+      // >>> TAMBAH BARIS INI <
+      localStorage.setItem(STORAGE_KEYS.CURRENT_QUESTION, String(index));
     }
   };
 
@@ -468,6 +600,8 @@ const OnlineExam: React.FC = () => {
               : `✅ Ujian selesai! Skor Anda: ${calculatedScore}/100 (${correctAnswers}/${totalQuestions} benar) - Status: ${status}`
           );
           setIsSubmitting(false);
+          // >>> TAMBAH BARIS INI <
+          clearExamLocalStorage();
         } else {
           throw new Error(
             data.message || "Gagal mengupload PDF atau menyimpan data."
@@ -678,7 +812,11 @@ const OnlineExam: React.FC = () => {
                 </label>
                 <select
                   value={selectedMapel}
-                  onChange={(e) => setSelectedMapel(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedMapel(e.target.value);
+                    // >>> TAMBAH BARIS INI <
+                    saveFormData();
+                  }}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={isVerifying}
                 >
@@ -698,7 +836,11 @@ const OnlineExam: React.FC = () => {
                 </label>
                 <select
                   value={selectedMateri}
-                  onChange={(e) => setSelectedMateri(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedMateri(e.target.value);
+                    // >>> TAMBAH BARIS INI <
+                    saveFormData();
+                  }}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={!selectedMapel || isVerifying}
                 >
@@ -718,7 +860,11 @@ const OnlineExam: React.FC = () => {
                 </label>
                 <select
                   value={selectedJenisUjian}
-                  onChange={(e) => setSelectedJenisUjian(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedJenisUjian(e.target.value);
+                    // >>> TAMBAH BARIS INI <
+                    saveFormData();
+                  }}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={isVerifying}
                 >
@@ -733,7 +879,11 @@ const OnlineExam: React.FC = () => {
                 </label>
                 <select
                   value={namaSiswa}
-                  onChange={(e) => setNamaSiswa(e.target.value)}
+                  onChange={(e) => {
+                    setNamaSiswa(e.target.value);
+                    // >>> TAMBAH BARIS INI <
+                    saveFormData();
+                  }}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={isVerifying}
                 >
@@ -752,7 +902,11 @@ const OnlineExam: React.FC = () => {
                 <input
                   type="password"
                   value={nisn}
-                  onChange={(e) => setNisn(e.target.value)}
+                  onChange={(e) => {
+                    setNisn(e.target.value);
+                    // >>> TAMBAH BARIS INI <
+                    saveFormData();
+                  }}
                   className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Masukkan NISN"
                   disabled={isVerifying}
@@ -876,6 +1030,9 @@ const OnlineExam: React.FC = () => {
                     setCountdown(5);
                     setIsVerifying(false);
                     setShowConfirmDialog(false);
+
+                    // >>> TAMBAH BARIS INI <
+                    clearExamLocalStorage();
                   }}
                   className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
