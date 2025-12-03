@@ -65,7 +65,7 @@ const OnlineExam: React.FC = () => {
   const [countdown, setCountdown] = useState<number>(5); // 5-second countdown
   const [kkm, setKkm] = useState<number>(30); // Default KKM value
   const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false); // Confirmation dialog state
-  const examDuration = 1800; // Configurable exam duration in seconds
+  const examDuration = 3600; // Configurable exam duration in seconds
 
   // Timer effect for exam
   useEffect(() => {
