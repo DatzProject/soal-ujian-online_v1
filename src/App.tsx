@@ -60,7 +60,7 @@ const OnlineExam: React.FC = () => {
   const [subjectsData, setSubjectsData] = useState<SubjectData[]>([]);
   const [isVerified, setIsVerified] = useState<boolean>(false);
   const [studentsData, setStudentsData] = useState<StudentData[]>([]);
-  const [timeLeft, setTimeLeft] = useState<number>(1800); // 30 minutes in seconds
+  const [timeLeft, setTimeLeft] = useState<number>(3600); // 30 minutes in seconds
   const [isCountingDown, setIsCountingDown] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number>(5); // 5-second countdown
   const [kkm, setKkm] = useState<number>(30); // Default KKM value
