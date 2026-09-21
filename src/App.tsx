@@ -4,7 +4,7 @@ import { jsPDF } from "jspdf";
 
 // Replace with your deployed Google Apps Script Web App URL
 const scriptURL =
-  "https://script.google.com/macros/s/AKfycbxPn0iYapc46OgI1EM_ivxgG5xp15y47qL_gSF1yPXnSVTVFwil7ehrZqHLIVPLquS5Sw/exec";
+  "https://script.google.com/macros/s/AKfycbyRnBKNf2C8SCwN0bzHAJDbtt1hIiO0w7kPnKqXPHgSkRper3eKT2ZBLUhQGCMRBpC_/exec";
 
 interface QuizQuestion {
   id: string;
